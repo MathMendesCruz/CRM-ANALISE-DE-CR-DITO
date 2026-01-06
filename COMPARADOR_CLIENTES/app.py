@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime
+import re
+import unicodedata
 
 st.set_page_config(page_title="Comparador de Clientes NETFI", layout="wide")
 
@@ -68,16 +70,80 @@ with tab1:
             key="arquivo2"
         )
 
+    # Função utilitária para garantir que todo DataFrame esteja em string
+    def _coerce_to_str(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        df = df.fillna("")
+        for c in df.columns:
+            try:
+                df[c] = df[c].astype(str)
+            except Exception:
+                pass
+        return df
+
     # Função para carregar arquivo
     def carregar_arquivo(arquivo):
         try:
             if arquivo.name.endswith('.csv'):
-                return pd.read_csv(arquivo)
+                # Tenta diferentes separadores
+                separadores = [',', ';', '\t', '|']
+                df = None
+                
+                for sep in separadores:
+                    try:
+                        arquivo.seek(0)
+                        df = pd.read_csv(arquivo, sep=sep, on_bad_lines='skip', engine='python', dtype=str)
+                        if len(df.columns) > 1:  # Se encontrou múltiplas colunas, é o separador certo
+                            return _coerce_to_str(df)
+                    except Exception:
+                        continue
+                
+                if df is not None:
+                    return _coerce_to_str(df)
+                else:
+                    st.error("❌ Não foi possível identificar o separador do arquivo. Tente abrir em um editor e verificar.")
+                    return None
             else:
-                return pd.read_excel(arquivo)
+                df = pd.read_excel(arquivo, dtype=str)
+                return _coerce_to_str(df)
         except Exception as e:
             st.error(f"❌ Erro ao carregar arquivo: {e}")
+            st.info("💡 Dica: Verifique se o arquivo está corrompido ou tente salvar novamente como CSV com separador de vírgula (,)")
             return None
+
+    # Helpers de normalização para matching
+    def _somente_digitos(valor):
+        return re.sub(r"\D+", "", str(valor))
+
+    def _normalizar_texto(valor):
+        s = str(valor).strip()
+        s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+        s = re.sub(r"\s+", " ", s)
+        return s.upper()
+
+    def _chave_match(serie: pd.Series, nome_coluna: str) -> pd.Series:
+        nome = (nome_coluna or "").lower()
+
+        def _pad_doc(cell: object) -> str:
+            s = _somente_digitos(cell)
+            if not s:
+                return ""
+            if "cpf" in nome:
+                return s.zfill(11)
+            if "cnpj" in nome:
+                return s.zfill(14)
+            if any(k in nome for k in ["documento", "doc"]):
+                # Heurística: documentos com até 11 dígitos são CPF, >11 são CNPJ
+                return s.zfill(11) if len(s) <= 11 else s.zfill(14)
+            if "id" in nome:
+                # Para IDs, mantenha apenas dígitos (sem padding forçado)
+                return s
+            return s
+
+        if any(k in nome for k in ["cpf", "cnpj", "documento", "doc", "id"]):
+            return serie.map(_pad_doc)
+        else:
+            return serie.map(_normalizar_texto)
 
     # Processar arquivos quando ambos são enviados
     if arquivo1 and arquivo2:
@@ -113,29 +179,32 @@ with tab1:
             with col1:
                 # Detectar colunas de identificação
                 colunas_id_arquivo1 = [col for col in df1.columns if 'id' in col.lower() or 'cnpj' in col.lower() or 'cpf' in col.lower()]
+                idx_col1 = list(df1.columns).index(colunas_id_arquivo1[0]) if colunas_id_arquivo1 else 0
                 coluna_match_1 = st.selectbox(
                     "Coluna para matching (Arquivo 1):",
                     df1.columns,
-                    index=colunas_id_arquivo1[0] if colunas_id_arquivo1 else 0,
+                    index=idx_col1,
                     key="col_match_1"
                 )
             
             with col2:
                 colunas_id_arquivo2 = [col for col in df2.columns if 'id' in col.lower() or 'cnpj' in col.lower() or 'cpf' in col.lower()]
+                idx_col2 = list(df2.columns).index(colunas_id_arquivo2[0]) if colunas_id_arquivo2 else 0
                 coluna_match_2 = st.selectbox(
                     "Coluna para matching (Arquivo 2):",
                     df2.columns,
-                    index=colunas_id_arquivo2[0] if colunas_id_arquivo2 else 0,
+                    index=idx_col2,
                     key="col_match_2"
                 )
             
             with col3:
                 # Detectar coluna de WhatsApp
                 colunas_whatsapp = [col for col in df2.columns if 'whatsapp' in col.lower() or 'celular' in col.lower() or 'telefone' in col.lower()]
+                idx_whatsapp = list(df2.columns).index(colunas_whatsapp[0]) if colunas_whatsapp else 0
                 coluna_whatsapp = st.selectbox(
                     "Coluna de WhatsApp (Arquivo 2):",
                     df2.columns,
-                    index=colunas_whatsapp[0] if colunas_whatsapp else 0,
+                    index=idx_whatsapp,
                     key="col_whatsapp"
                 )
             
@@ -149,9 +218,9 @@ with tab1:
                     df1_copy = df1.copy()
                     df2_copy = df2.copy()
                     
-                    # Normalizar colunas de matching
-                    df1_copy['_match_key'] = df1_copy[coluna_match_1].astype(str).str.strip().str.upper()
-                    df2_copy['_match_key'] = df2_copy[coluna_match_2].astype(str).str.strip().str.upper()
+                    # Normalizar colunas de matching (remove pontuação de CPF/CNPJ e padroniza texto)
+                    df1_copy['_match_key'] = _chave_match(df1_copy[coluna_match_1], coluna_match_1)
+                    df2_copy['_match_key'] = _chave_match(df2_copy[coluna_match_2], coluna_match_2)
                     
                     # Realizar merge
                     resultado = df1_copy.merge(
