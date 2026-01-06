@@ -438,7 +438,7 @@ st.markdown("""
 
 st.markdown("""
 <div style="text-align: center; color: #999; margin-top: 50px;">
-    <p>Desenvolvido para NETFI - Provedora de Internet</p>
-    <small>Versão 2.0 | 2025 | Comparador de Clientes + Formatador OPA!</small>
+    <p>Desenvolvido por MATH NETFIT(The legend) - Auxiliar de Sistemas</p>
+    <small>Versão 1.0 | 2026 | Comparador de Clientes + Formatador OPA!</small>
 </div>
 """, unsafe_allow_html=True)
