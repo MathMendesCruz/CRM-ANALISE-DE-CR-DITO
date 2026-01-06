@@ -207,6 +207,13 @@ with tab1:
                     index=idx_whatsapp,
                     key="col_whatsapp"
                 )
+
+            colunas_extras_sel = st.multiselect(
+                "Colunas extras do Arquivo 2 para incluir no resultado:",
+                options=[c for c in df2.columns if c != coluna_match_2],
+                default=[],
+                key="colunas_extras_sel"
+            )
             
             st.markdown("---")
             
@@ -223,8 +230,12 @@ with tab1:
                     df2_copy['_match_key'] = _chave_match(df2_copy[coluna_match_2], coluna_match_2)
                     
                     # Realizar merge
+                    cols_para_merge = ['_match_key', coluna_whatsapp] + list(colunas_extras_sel)
+                    # Remover duplicatas preservando ordem
+                    cols_para_merge = list(dict.fromkeys(cols_para_merge))
+
                     resultado = df1_copy.merge(
-                        df2_copy[['_match_key', coluna_whatsapp]],
+                        df2_copy[cols_para_merge],
                         on='_match_key',
                         how='left'
                     )
