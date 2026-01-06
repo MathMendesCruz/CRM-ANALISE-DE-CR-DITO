@@ -6,239 +6,370 @@ from datetime import datetime
 st.set_page_config(page_title="Comparador de Clientes NETFI", layout="wide")
 
 st.title("🔍 Comparador de Clientes NETFI")
-st.markdown("Identifique os WhatsApps dos clientes comparando duas bases de dados")
+st.markdown("Ferramentas para análise de dados e formatação de contatos")
 
-# Sidebar para instruções
-with st.sidebar:
-    st.markdown("### 📋 Instruções")
-    st.markdown("""
-    1. **Arquivo 1**: Planilha de clientes a consultar
-    2. **Arquivo 2**: Base de dados completa do sistema NETFI
-    3. O app vai encontrar o WhatsApp dos clientes do Arquivo 1
-    """)
+# Criar tabs
+tab1, tab2 = st.tabs(["📊 Comparador de Clientes", "📱 Formatador de Contatos OPA!"])
 
-# Seção de upload de arquivos
-st.markdown("---")
-col1, col2 = st.columns(2)
+# ===== TAB 1: COMPARADOR DE CLIENTES =====
+with tab1:
+    st.subheader("Localize os dados de clientes com análise de crédito na base de dados NETFI/LINNE")
 
-with col1:
-    st.subheader("📁 Arquivo 1: Clientes a Consultar")
-    arquivo1 = st.file_uploader(
-        "Selecione o arquivo com os clientes a consultar",
-        type=["csv", "xlsx", "xls"],
-        key="arquivo1"
-    )
-
-with col2:
-    st.subheader("📁 Arquivo 2: Base de Dados NETFI")
-    arquivo2 = st.file_uploader(
-        "Selecione a base de dados completa do sistema",
-        type=["csv", "xlsx", "xls"],
-        key="arquivo2"
-    )
-
-# Função para carregar arquivo
-def carregar_arquivo(arquivo):
-    try:
-        if arquivo.name.endswith('.csv'):
-            return pd.read_csv(arquivo)
-        else:
-            return pd.read_excel(arquivo)
-    except Exception as e:
-        st.error(f"❌ Erro ao carregar arquivo: {e}")
-        return None
-
-# Processar arquivos quando ambos são enviados
-if arquivo1 and arquivo2:
-    st.markdown("---")
-    
-    # Carregar dados
-    df1 = carregar_arquivo(arquivo1)
-    df2 = carregar_arquivo(arquivo2)
-    
-    if df1 is not None and df2 is not None:
-        st.success("✅ Arquivos carregados com sucesso!")
-        
-        # Exibir informações dos arquivos
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.info(f"**Arquivo 1**: {len(df1)} registros")
-            with st.expander("Ver colunas disponíveis"):
-                st.write(df1.columns.tolist())
-        
-        with col2:
-            st.info(f"**Arquivo 2**: {len(df2)} registros")
-            with st.expander("Ver colunas disponíveis"):
-                st.write(df2.columns.tolist())
-        
-        st.markdown("---")
-        
-        # Seleção de coluna para matching
-        st.subheader("⚙️ Configurar Comparação")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            # Detectar colunas de identificação
-            colunas_id_arquivo1 = [col for col in df1.columns if 'id' in col.lower() or 'cnpj' in col.lower() or 'cpf' in col.lower()]
-            coluna_match_1 = st.selectbox(
-                "Coluna para matching (Arquivo 1):",
-                df1.columns,
-                index=colunas_id_arquivo1[0] if colunas_id_arquivo1 else 0,
-                key="col_match_1"
-            )
-        
-        with col2:
-            colunas_id_arquivo2 = [col for col in df2.columns if 'id' in col.lower() or 'cnpj' in col.lower() or 'cpf' in col.lower()]
-            coluna_match_2 = st.selectbox(
-                "Coluna para matching (Arquivo 2):",
-                df2.columns,
-                index=colunas_id_arquivo2[0] if colunas_id_arquivo2 else 0,
-                key="col_match_2"
-            )
-        
-        with col3:
-            # Detectar coluna de WhatsApp
-            colunas_whatsapp = [col for col in df2.columns if 'whatsapp' in col.lower() or 'celular' in col.lower() or 'telefone' in col.lower()]
-            coluna_whatsapp = st.selectbox(
-                "Coluna de WhatsApp (Arquivo 2):",
-                df2.columns,
-                index=colunas_whatsapp[0] if colunas_whatsapp else 0,
-                key="col_whatsapp"
-            )
-        
-        st.markdown("---")
-        
-        # Realizar comparação
-        if st.button("🔍 Comparar e Encontrar WhatsApps", type="primary", use_container_width=True):
-            try:
-                # Fazer merge dos DataFrames
-                # Primeiro, normalizar os valores para comparação (maiúsculas, sem espaços)
-                df1_copy = df1.copy()
-                df2_copy = df2.copy()
-                
-                # Normalizar colunas de matching
-                df1_copy['_match_key'] = df1_copy[coluna_match_1].astype(str).str.strip().str.upper()
-                df2_copy['_match_key'] = df2_copy[coluna_match_2].astype(str).str.strip().str.upper()
-                
-                # Realizar merge
-                resultado = df1_copy.merge(
-                    df2_copy[['_match_key', coluna_whatsapp]],
-                    on='_match_key',
-                    how='left'
-                )
-                
-                # Renomear coluna de WhatsApp
-                resultado = resultado.rename(columns={coluna_whatsapp: 'WhatsApp'})
-                
-                # Remover coluna auxiliar
-                resultado = resultado.drop('_match_key', axis=1)
-                
-                # Calcular estatísticas
-                encontrados = resultado['WhatsApp'].notna().sum()
-                nao_encontrados = resultado['WhatsApp'].isna().sum()
-                taxa_sucesso = (encontrados / len(resultado) * 100) if len(resultado) > 0 else 0
-                
-                # Exibir estatísticas
-                st.subheader("📊 Resultado da Comparação")
-                
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric("Total de Clientes", len(resultado))
-                
-                with col2:
-                    st.metric("✅ WhatsApps Encontrados", encontrados, delta=f"{taxa_sucesso:.1f}%")
-                
-                with col3:
-                    st.metric("❌ Não Encontrados", nao_encontrados)
-                
-                with col4:
-                    st.metric("Taxa de Sucesso", f"{taxa_sucesso:.1f}%")
-                
-                st.markdown("---")
-                
-                # Tabelas de resultado
-                tab1, tab2, tab3 = st.tabs(["📋 Todos os Resultados", "✅ Encontrados", "❌ Não Encontrados"])
-                
-                with tab1:
-                    st.subheader("Resultado Completo")
-                    st.dataframe(resultado, use_container_width=True, height=400)
-                
-                with tab2:
-                    encontrados_df = resultado[resultado['WhatsApp'].notna()]
-                    st.subheader(f"Clientes com WhatsApp ({len(encontrados_df)})")
-                    st.dataframe(encontrados_df, use_container_width=True, height=400)
-                
-                with tab3:
-                    nao_encontrados_df = resultado[resultado['WhatsApp'].isna()]
-                    st.subheader(f"Clientes Sem WhatsApp ({len(nao_encontrados_df)})")
-                    st.dataframe(nao_encontrados_df, use_container_width=True, height=400)
-                
-                st.markdown("---")
-                
-                # Opções de exportação
-                st.subheader("💾 Exportar Resultados")
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    csv = resultado.to_csv(index=False, encoding='utf-8-sig')
-                    st.download_button(
-                        label="📥 Baixar como CSV",
-                        data=csv,
-                        file_name=f"resultado_comparacao_{datetime.now().strftime('%d%m%Y_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-                
-                with col2:
-                    buffer = io.BytesIO()
-                    resultado.to_excel(buffer, index=False, sheet_name='Resultados')
-                    buffer.seek(0)
-                    st.download_button(
-                        label="📥 Baixar como Excel",
-                        data=buffer,
-                        file_name=f"resultado_comparacao_{datetime.now().strftime('%d%m%Y_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                
-                with col3:
-                    apenas_whatsapp = resultado[['Cliente' if 'Cliente' in resultado.columns else coluna_match_1, 'WhatsApp']].dropna()
-                    csv_whatsapp = apenas_whatsapp.to_csv(index=False, encoding='utf-8-sig')
-                    st.download_button(
-                        label="📱 Apenas WhatsApps",
-                        data=csv_whatsapp,
-                        file_name=f"whatsapps_{datetime.now().strftime('%d%m%Y_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-                
-            except Exception as e:
-                st.error(f"❌ Erro na comparação: {e}")
-                st.info("💡 Verifique se as colunas selecionadas existem e se os dados estão no formato correto.")
-
-else:
-    # Mensagem quando arquivos ainda não foram enviados
-    st.info("👆 Por favor, envie os dois arquivos para começar a comparação.")
-    
-    # Mostrar exemplo de estrutura esperada
-    with st.expander("📝 Ver Exemplo de Estrutura de Arquivo"):
+    # Sidebar para instruções
+    with st.sidebar:
+        st.markdown("### 📋 Instruções")
         st.markdown("""
-        **Arquivo 1 - Clientes a Consultar:**
-        | ID | Cliente | CNPJ/CPF | Total de Ocorrências | Integração | Tipo de consulta | Data consulta | Valor Total |
-        |----|---------|----------|----------------------|------------|------------------|---------------|-------------|
-        | 1 | ACME Corp | 12.345.678/0001-00 | 5 | SIM | API | 2024-01-15 | 5000.00 |
-        
-        **Arquivo 2 - Base de Dados NETFI:**
-        | ID | CNPJ/CPF | Cliente | WhatsApp | Email | ... |
-        |----|----------|---------|----------|-------|-----|
-        | 1 | 12.345.678/0001-00 | ACME Corp | 11987654321 | contact@acme.com | ... |
+        1. **Arquivo 1**: Insira a planilha com os clientes de análise de crédito
+        2. **Arquivo 2**: Insira a planilha LEADS CRM
+        3. O site vai comparar e localizar os dados dos clientes com análise de crédito
         """)
 
-st.markdown("---")
+    # Seção de upload de arquivos
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        col_titulo, col_help = st.columns([3, 1])
+        with col_titulo:
+            st.subheader("📁 Arquivo 1: Análise de Crédito")
+        with col_help:
+            with st.expander("ℹ️ Como extrair?"):
+                st.markdown("""
+                **Passo a passo:**
+                1. No IXC, acesse "Central de consultas (CPF/CNPJ)"
+                2. Localize o botão de **Download (CSV)**
+                3. Clique para baixar a planilha
+                4. Envie o arquivo aqui ✅
+                """)
+        
+        arquivo1 = st.file_uploader(
+            "Selecione a planilha com os clientes de análise de crédito",
+            type=["csv", "xlsx", "xls"],
+            key="arquivo1"
+        )
+
+    with col2:
+        col_titulo, col_help = st.columns([3, 1])
+        with col_titulo:
+            st.subheader("📁 Arquivo 2: LEADS CRM")
+        with col_help:
+            with st.expander("ℹ️ Como extrair?"):
+                st.markdown("""
+                **Passo a passo:**
+                1. Acesse **Ferramentas > Query Builder** no IXC
+                2. Localize o botão **Visualização Completa**
+                3. Clique em **CSV** para exportar
+                4. Envie o arquivo aqui ✅
+                """)
+        
+        arquivo2 = st.file_uploader(
+            "Selecione a planilha LEADS CRM",
+            type=["csv", "xlsx", "xls"],
+            key="arquivo2"
+        )
+
+    # Função para carregar arquivo
+    def carregar_arquivo(arquivo):
+        try:
+            if arquivo.name.endswith('.csv'):
+                return pd.read_csv(arquivo)
+            else:
+                return pd.read_excel(arquivo)
+        except Exception as e:
+            st.error(f"❌ Erro ao carregar arquivo: {e}")
+            return None
+
+    # Processar arquivos quando ambos são enviados
+    if arquivo1 and arquivo2:
+        st.markdown("---")
+        
+        # Carregar dados
+        df1 = carregar_arquivo(arquivo1)
+        df2 = carregar_arquivo(arquivo2)
+        
+        if df1 is not None and df2 is not None:
+            st.success("✅ Arquivos carregados com sucesso!")
+            
+            # Exibir informações dos arquivos
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.info(f"**Arquivo 1**: {len(df1)} registros")
+                with st.expander("Ver colunas disponíveis"):
+                    st.write(df1.columns.tolist())
+            
+            with col2:
+                st.info(f"**Arquivo 2**: {len(df2)} registros")
+                with st.expander("Ver colunas disponíveis"):
+                    st.write(df2.columns.tolist())
+            
+            st.markdown("---")
+            
+            # Seleção de coluna para matching
+            st.subheader("⚙️ Configurar Comparação")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # Detectar colunas de identificação
+                colunas_id_arquivo1 = [col for col in df1.columns if 'id' in col.lower() or 'cnpj' in col.lower() or 'cpf' in col.lower()]
+                coluna_match_1 = st.selectbox(
+                    "Coluna para matching (Arquivo 1):",
+                    df1.columns,
+                    index=colunas_id_arquivo1[0] if colunas_id_arquivo1 else 0,
+                    key="col_match_1"
+                )
+            
+            with col2:
+                colunas_id_arquivo2 = [col for col in df2.columns if 'id' in col.lower() or 'cnpj' in col.lower() or 'cpf' in col.lower()]
+                coluna_match_2 = st.selectbox(
+                    "Coluna para matching (Arquivo 2):",
+                    df2.columns,
+                    index=colunas_id_arquivo2[0] if colunas_id_arquivo2 else 0,
+                    key="col_match_2"
+                )
+            
+            with col3:
+                # Detectar coluna de WhatsApp
+                colunas_whatsapp = [col for col in df2.columns if 'whatsapp' in col.lower() or 'celular' in col.lower() or 'telefone' in col.lower()]
+                coluna_whatsapp = st.selectbox(
+                    "Coluna de WhatsApp (Arquivo 2):",
+                    df2.columns,
+                    index=colunas_whatsapp[0] if colunas_whatsapp else 0,
+                    key="col_whatsapp"
+                )
+            
+            st.markdown("---")
+            
+            # Realizar comparação
+            if st.button("🔍 Comparar e Encontrar WhatsApps", type="primary", use_container_width=True):
+                try:
+                    # Fazer merge dos DataFrames
+                    # Primeiro, normalizar os valores para comparação (maiúsculas, sem espaços)
+                    df1_copy = df1.copy()
+                    df2_copy = df2.copy()
+                    
+                    # Normalizar colunas de matching
+                    df1_copy['_match_key'] = df1_copy[coluna_match_1].astype(str).str.strip().str.upper()
+                    df2_copy['_match_key'] = df2_copy[coluna_match_2].astype(str).str.strip().str.upper()
+                    
+                    # Realizar merge
+                    resultado = df1_copy.merge(
+                        df2_copy[['_match_key', coluna_whatsapp]],
+                        on='_match_key',
+                        how='left'
+                    )
+                    
+                    # Renomear coluna de WhatsApp
+                    resultado = resultado.rename(columns={coluna_whatsapp: 'WhatsApp'})
+                    
+                    # Remover coluna auxiliar
+                    resultado = resultado.drop('_match_key', axis=1)
+                    
+                    # Calcular estatísticas
+                    encontrados = resultado['WhatsApp'].notna().sum()
+                    nao_encontrados = resultado['WhatsApp'].isna().sum()
+                    taxa_sucesso = (encontrados / len(resultado) * 100) if len(resultado) > 0 else 0
+                    
+                    # Exibir estatísticas
+                    st.subheader("📊 Resultado da Comparação")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Total de Clientes", len(resultado))
+                    
+                    with col2:
+                        st.metric("✅ WhatsApps Encontrados", encontrados, delta=f"{taxa_sucesso:.1f}%")
+                    
+                    with col3:
+                        st.metric("❌ Não Encontrados", nao_encontrados)
+                    
+                    with col4:
+                        st.metric("Taxa de Sucesso", f"{taxa_sucesso:.1f}%")
+                    
+                    st.markdown("---")
+                    
+                    # Tabelas de resultado
+                    tab1_res, tab2_res, tab3_res = st.tabs(["📋 Todos os Resultados", "✅ Encontrados", "❌ Não Encontrados"])
+                    
+                    with tab1_res:
+                        st.subheader("Resultado Completo")
+                        st.dataframe(resultado, use_container_width=True, height=400)
+                    
+                    with tab2_res:
+                        encontrados_df = resultado[resultado['WhatsApp'].notna()]
+                        st.subheader(f"Clientes com WhatsApp ({len(encontrados_df)})")
+                        st.dataframe(encontrados_df, use_container_width=True, height=400)
+                    
+                    with tab3_res:
+                        nao_encontrados_df = resultado[resultado['WhatsApp'].isna()]
+                        st.subheader(f"Clientes Sem WhatsApp ({len(nao_encontrados_df)})")
+                        st.dataframe(nao_encontrados_df, use_container_width=True, height=400)
+                    
+                    st.markdown("---")
+                    
+                    # Opções de exportação
+                    st.subheader("💾 Exportar Resultados")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        csv = resultado.to_csv(index=False, encoding='utf-8-sig')
+                        st.download_button(
+                            label="📥 Baixar como CSV",
+                            data=csv,
+                            file_name=f"resultado_comparacao_{datetime.now().strftime('%d%m%Y_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+                    
+                    with col2:
+                        buffer = io.BytesIO()
+                        resultado.to_excel(buffer, index=False, sheet_name='Resultados')
+                        buffer.seek(0)
+                        st.download_button(
+                            label="📥 Baixar como Excel",
+                            data=buffer,
+                            file_name=f"resultado_comparacao_{datetime.now().strftime('%d%m%Y_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    
+                    with col3:
+                        apenas_whatsapp = resultado[['Cliente' if 'Cliente' in resultado.columns else coluna_match_1, 'WhatsApp']].dropna()
+                        csv_whatsapp = apenas_whatsapp.to_csv(index=False, encoding='utf-8-sig')
+                        st.download_button(
+                            label="📱 Apenas WhatsApps",
+                            data=csv_whatsapp,
+                            file_name=f"whatsapps_{datetime.now().strftime('%d%m%Y_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+                    
+                except Exception as e:
+                    st.error(f"❌ Erro na comparação: {e}")
+                    st.info("💡 Verifique se as colunas selecionadas existem e se os dados estão no formato correto.")
+
+    else:
+        # Mensagem quando arquivos ainda não foram enviados
+        st.info("👆 Por favor, envie os dois arquivos para começar a comparação.")
+        
+        # Mostrar exemplo de estrutura esperada
+        with st.expander("📝 Ver Exemplo de Estrutura de Arquivo"):
+            st.markdown("""
+            **Arquivo 1 - Análise de Crédito:**
+            | ID | Cliente | CNPJ/CPF | Total de Ocorrências | Integração | Tipo de consulta | Data consulta | Valor Total |
+            |----|---------|----------|----------------------|------------|------------------|---------------|-------------|
+            | 1 | ACME Corp | 12.345.678/0001-00 | 5 | SIM | API | 2024-01-15 | 5000.00 |
+            
+            **Arquivo 2 - LEADS CRM:**
+            | ID | CNPJ/CPF | Cliente | WhatsApp | Email | ... |
+            |----|----------|---------|----------|-------|-----|
+            | 1 | 12.345.678/0001-00 | ACME Corp | 11987654321 | contact@acme.com | ... |
+            """)
+
+# ===== TAB 2: FORMATADOR DE CONTATOS OPA! =====
+with tab2:
+    st.subheader("Formatador de contatos para o OPA!")
+    
+    uploaded_file = st.file_uploader("Envie seu arquivo CSV", type=["csv"], key="opa_uploader")
+
+    # Contatos fixos
+    contatos_fixos = [
+        {"name": "Matheus Mendes", "whatsapp": "(11) 94887-6252"},
+    ]
+
+    # Inicializa estado para contatos extras (manuais)
+    if "contatos_extras" not in st.session_state:
+        st.session_state["contatos_extras"] = []
+
+    def encontrar_indice_padrao(colunas, palavras_chave, default=0):
+        for i, col in enumerate(colunas):
+            lower = str(col).lower()
+            if any(k in lower for k in palavras_chave):
+                return i
+        return default if 0 <= default < len(colunas) else 0
+
+    if uploaded_file:
+        try:
+            try:
+                df = pd.read_csv(uploaded_file, sep=None, engine="python")
+            except Exception:
+                # Recomeça leitura com separador padrão
+                uploaded_file.seek(0)
+                df = pd.read_csv(uploaded_file, sep=",")
+            st.subheader("Colunas encontradas:")
+            st.write(df.columns.tolist())
+
+            # Seleção das colunas
+            st.info("Selecione as colunas de Nome/Razão Social e WhatsApp/Celular abaixo:")
+            colunas = df.columns.tolist()
+            idx_nome = encontrar_indice_padrao(colunas, ["razão", "razao", "nome", "nome/"])
+            idx_wh = encontrar_indice_padrao(colunas, ["whatsapp", "celular", "telefone"], default=1 if len(colunas) > 1 else 0)
+
+            col_nome = st.selectbox("Coluna de Nome/Razão Social", colunas, index=idx_nome)
+            col_whatsapp = st.selectbox("Coluna de WhatsApp/Celular", colunas, index=idx_wh)
+
+            st.subheader("Adicionar contato manualmente")
+            with st.form("adicionar_contato", clear_on_submit=True):
+                nome_extra = st.text_input("Nome do contato")
+                whatsapp_extra = st.text_input("WhatsApp do contato")
+                adicionar = st.form_submit_button("Adicionar contato")
+                if adicionar:
+                    if nome_extra.strip() and whatsapp_extra.strip():
+                        st.session_state["contatos_extras"].append(
+                            {"name": nome_extra.strip(), "whatsapp": whatsapp_extra.strip()}
+                        )
+                        st.success("Contato adicionado.")
+                    else:
+                        st.error("Preencha nome e WhatsApp antes de adicionar.")
+
+            # Remover contatos manuais
+            if st.session_state["contatos_extras"]:
+                st.subheader("Contatos manuais adicionados")
+                for idx, contato in enumerate(st.session_state["contatos_extras"]):
+                    col1, col2 = st.columns([4,1])
+                    col1.write(f"{contato['name']} — {contato['whatsapp']}")
+                    if col2.button("Remover", key=f"remover_{idx}"):
+                        st.session_state["contatos_extras"].pop(idx)
+
+            # Verifica seleção e formata saída
+            if col_nome and col_whatsapp:
+                df_formatado = df[[col_nome, col_whatsapp]].copy()
+                df_formatado.columns = ["name", "whatsapp"]
+
+                contatos_df = pd.DataFrame(contatos_fixos + st.session_state["contatos_extras"])
+                df_final = pd.concat([contatos_df, df_formatado], ignore_index=True)
+
+                csv = df_final.to_csv(index=False)
+                st.download_button(
+                    label="📥 Baixar CSV formatado",
+                    data=csv.encode("utf-8"),
+                    file_name="contatos_formatado.csv",
+                    mime="text/csv"
+                )
+
+                st.success("Colunas selecionadas com sucesso!")
+                st.subheader("Pré-visualização:")
+                st.dataframe(df_final)
+
+                st.subheader("Resultado Formatado (texto com vírgula):")
+                resultado_texto = "\n".join(f"{row['name']}, {row['whatsapp']}" for _, row in df_final.iterrows())
+                st.code(resultado_texto, language="text")
+            else:
+                st.error("Selecione as colunas corretamente.")
+        except Exception as e:
+            st.error(f"Ocorreu um erro ao processar o arquivo: {e}")
+
+# ===== RODAPÉ =====
 st.markdown("""
-<div style="text-align: center; color: #999;">
+<style>
+    .stButton>button {background-color: #01B1F2; color: white; font-weight: bold;}
+    .stDataFrame {border-radius: 10px;}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div style="text-align: center; color: #999; margin-top: 50px;">
     <p>Desenvolvido para NETFI - Provedora de Internet</p>
-    <small>Versão 1.0 | 2025</small>
+    <small>Versão 2.0 | 2025 | Comparador de Clientes + Formatador OPA!</small>
 </div>
 """, unsafe_allow_html=True)
